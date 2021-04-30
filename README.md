@@ -13,3 +13,6 @@ You can control the degree of parallelism used by setting the ***num_workers*** 
   to workers can be controlled via ***num_cpus_per_worker***, ****num_gpus_per_worker***, and ***custom_resources_per_worker***. 
   The number of GPUs can be a fractional quantity to allocate only a fraction of a GPU. 
   For example, with DQN you can pack five trainers onto one GPU by setting num_gpus: 0.2.
+  
+### Pettingzoo
+Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
