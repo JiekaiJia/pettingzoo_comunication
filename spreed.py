@@ -10,31 +10,26 @@ from ray.rllib.agents.ppo import PPOTrainer, DEFAULT_CONFIG
 import shutil
 
 
-env = simple_spread_v2.env(max_cycles = 100)
+env = simple_spread_v2.env(max_cycles=10)
 
 env.reset()
+last_reward = 0
 for agent in env.agent_iter():
     env.render()
-    observation, reward, done, info = env.last()
+    done = env.dones[agent]
+    current_reward = env.rewards[agent]
     if not done:
-        action = env.action_spaces[agent].sample()
+        if current_reward > last_reward:
+            pass
+        else:
+            action = env.action_spaces[agent].sample()
     else:
         action = None
+
+    observation, reward, _, info = env.last()
+    last_reward = reward
+    print(done)
     env.step(action)
 
+
 ray.shutdown()
-info = ray.init(ignore_reinit_error=True)
-print(info)
-
-CHECKPOINT_ROOT = "tmp/ppo/taxi"
-shutil.rmtree(CHECKPOINT_ROOT, ignore_errors=True, onerror=None)
-
-ray_results = os.getenv("HOME") + "/ray_results/"
-shutil.rmtree(ray_results, ignore_errors=True, onerror=None)
-
-config = DEFAULT_CONFIG.copy()
-config['num_workers'] = 1
-config['num_sgd_iter'] = 30
-config['sgd_minibatch_size'] = 128
-config['model']['fcnet_hiddens'] = [100, 100]
-config['num_cpus_per_worker'] = 0
