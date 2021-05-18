@@ -3,7 +3,7 @@
 **rollout**: A simulation of a policy in an environment.  
 - **command line examples**  
 train:`rllib train --run DQN --env CartPole-v0  # --eager [--trace] for eager execution`  
-tensorboard `tensorboard --logdir=~/ray_results`  
+tensorboard   `tensorboard --logdir=~/ray_results`
 evaluating `rllib rollout \
     ~/ray_results/default/DQN_CartPole-v0_0upjmdgr0/checkpoint_1/checkpoint-1 \
     --run DQN --env CartPole-v0 --steps 10000`  
@@ -16,3 +16,4 @@ You can control the degree of parallelism used by setting the ***num_workers*** 
   
 ### Pettingzoo
 Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
+@property transfers method as attribute.

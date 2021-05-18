@@ -21,7 +21,24 @@ centralised learning but decentralised execution.
     state, action and parameter of neural network. The loss function of DQN is as followed:
     $$\mathcal(L)_i(\theta_i) = \mathbb(E)_{s,u,r,s'}\[(y_i^{DQN} - $Q(s,u;\theta_i))^2\]$$  
     $y_i^{DQN}$ is the target value computed by a frozen network, which stop updating for a 
-    few iterations. The optimization strategy is to minimize the loss function.
+    few iterations. The optimization strategy is to minimize the loss function.  
+    - experience replay  
+    Storing the agents' experiences at each timestep, and when learning use all data stored to
+      train the model.
+      - More efficient use of previous experience, by learning with it multiple times. 
+      This is key when gaining real-world experience is costly, you can get full use of it. 
+      The Q-learning updates are incremental and do not converge quickly, so multiple passes 
+      with the same data is beneficial, especially when there is low variance in immediate outcomes 
+      (reward, next state) given the same state, action pair.
+      - Better convergence behaviour when training a function approximator. Partly this is because 
+        the data is more like i.i.d. data assumed in most supervised learning convergence proofs.
+    
+      But
+      - It is harder to use multi-step learning algorithms, such as Q(λ), which can be tuned to 
+        give better learning curves by balancing between bias (due to bootstrapping) and variance 
+        (due to delays and randomness in long-term outcomes).
+
+
 + **Dependent DQN**   
     This is a network extending to multi-agent system, that is, each agent separately learning its
     own network. However, this kind of setting may lead to convergence problems.
@@ -34,11 +51,5 @@ centralised learning but decentralised execution.
 ## 6. Experiments
 ## 7. Conclusion
 
-## 8. Questions
-- What is the communication action exactly?
-- What do the agents exactly exchange? 
-- How should we define the partial observation?
-- How can we define the communication oder? 
-- DIAL push the gradients through communication channel.
 
 

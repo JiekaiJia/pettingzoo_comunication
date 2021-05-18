@@ -53,7 +53,7 @@ if __name__ == '__main__':
     # Use GPUs if `RLLIB_NUM_GPUS` env var set to > 0.
     config['num_gpus'] = int(os.environ.get('RLLIB_NUM_GPUS', '0'))
     # Number of rollout worker actors to create for parallel sampling.
-    config['num_workers'] = 1
+    config['num_workers'] = 3
 
     # === Settings for the Trainer process ===
     # Whether layers should be shared for the value function.
@@ -84,16 +84,17 @@ if __name__ == '__main__':
         # of (policy_cls, obs_space, act_space, config). This defines the
         # observation and action spaces of the policies and any extra config.
         'policies': {
-            f'agent_{i}': (DQNTorchPolicy, obs_space, act_space, {}) for i in range(num_agents)
+            # f'agent_{i}': (DQNTorchPolicy, obs_space, act_space, {}) for i in range(num_agents)
+            'same': (DQNTorchPolicy, obs_space, act_space, {})
         },
         # Function mapping agent ids to policy ids.
-        'policy_mapping_fn': lambda agent_id: agent_id,
+        'policy_mapping_fn': lambda agent_id: 'same',
     }
 
     # DQN-specific configs
     # === Model ===
     # N-step Q learning
-    config['n_step'] = 1
+    config['n_step'] = 5
 
     # === Optimization ===
     # How many steps of the model to sample before learning starts.
@@ -101,9 +102,9 @@ if __name__ == '__main__':
     # Learning rate for adam optimizer.
     config['lr'] = 0.0001
     # Divide episodes into fragments of this many steps from each worker and for each agent during rollouts!
-    config['rollout_fragment_length'] = 4
+    config['rollout_fragment_length'] = 8
     # Training batch size -> Fragments are concatenated up to this point.
-    config['train_batch_size'] = 16
+    config['train_batch_size'] = 32
 
     # === Replay buffer ===
     # Size of the replay buffer. Note that if async_updates is set, then
@@ -126,15 +127,15 @@ if __name__ == '__main__':
 
     # Initialize ray and trainer object
     ray.init(
-        num_cpus=3,
+        num_cpus=5,
         ignore_reinit_error=True,
         log_to_driver=False
     )
 
     # Stop criteria
     stop = {
-        "episode_reward_mean": -115,
-        "training_iteration": 2000,
+        # "episode_reward_mean": -115,
+        "training_iteration": 2000000,
     }
 
     # Train
@@ -143,7 +144,9 @@ if __name__ == '__main__':
         stop=stop,
         config=config,
         checkpoint_at_end=True,
-        checkpoint_freq=50
+        checkpoint_freq=100,
+        # resources_per_trial={"cpu": 2},
+        num_samples=1
     )
 
     # Get the tuple of checkpoint_path and metric

@@ -24,8 +24,8 @@ if __name__ == '__main__':
     alg_name = 'DQN'
     # Environment parameters
     num_agents = 3
-    local_ratio = 0.5
-    max_cycles = 100000
+    local_ratio = 0.1
+    max_cycles = 25
 
     # function that outputs the environment you wish to register.
     def env_creator(config):
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     # Use GPUs if `RLLIB_NUM_GPUS` env var set to > 0.
     config['num_gpus'] = int(os.environ.get('RLLIB_NUM_GPUS', '0'))
     # Number of rollout worker actors to create for parallel sampling.
-    config['num_workers'] = 1
+    config['num_workers'] = 3
 
     # === Settings for the Trainer process ===
     # Whether layers should be shared for the value function.
@@ -66,13 +66,13 @@ if __name__ == '__main__':
     # Discount factor of the MDP.
     config['gamma'] = 0.99
     # If True, try to render the environment on the local worker or on worker 1
-    config['render_env'] = True
+    config['render_env'] = False
     # If True, stores videos in this relative directory inside the default
     config['record_env'] = False
 
     # === Debug Settings ===
     # Periodically print out summaries of relevant internal dataflow(DEBUG, INFO, WARN, or ERROR.)
-    config['log_level'] = 'DEBUG'
+    config['log_level'] = 'INFO'
 
     # === Deep Learning Framework Settings ===
     config['framework'] = 'torch'
@@ -93,15 +93,15 @@ if __name__ == '__main__':
     # DQN-specific configs
     # === Model ===
     # N-step Q learning
-    config['n_step'] = 3
+    config['n_step'] = 1
 
     # === Optimization ===
     # How many steps of the model to sample before learning starts.
-    config['learning_starts'] = 10000
+    config['learning_starts'] = 1000
     # Learning rate for adam optimizer.
     config['lr'] = 0.0001
     # Divide episodes into fragments of this many steps from each worker and for each agent during rollouts!
-    config['rollout_fragment_length'] = 4
+    config['rollout_fragment_length'] = 8
     # Training batch size -> Fragments are concatenated up to this point.
     config['train_batch_size'] = 32
 
@@ -136,9 +136,9 @@ if __name__ == '__main__':
     with open('checkpoints.txt', 'r') as f:
         checkpoint_path = f.read()
 
-    trainer.restore('/home/jiekaijia/ray_results/DQN/DQN_simple_spread_610eb_00000_0_2021-05-01_01-11-22/checkpoint_000180/checkpoint-180')
+    trainer.restore(checkpoint_path)
     cumulative_reward = 0
-    env = simple_spread_v2.env(max_cycles=1000)
+    env = simple_spread_v2.env(max_cycles=50)
     env.reset()
 
     for agent in env.agent_iter():
