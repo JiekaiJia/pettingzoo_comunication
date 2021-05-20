@@ -76,7 +76,7 @@ def save_episode_and_reward_to_csv(file, writer, e, r):
 def run_trial(opt, result_path=None, verbose=False):
     # Initialize action and comm bit settings
     opt = init_opt(opt)
-    env = simple_spread_v2.env()
+    env = simple_spread_v2.env(max_cycles=1)
 
     game = create_game(env, opt)
     agents = create_agents(opt, game)
@@ -106,7 +106,8 @@ if __name__ == '__main__':
     parser.add_argument('-v', '--verbose', action='store_true', help='prints training epoch rewards if set')
     args = parser.parse_args()
 
-    opt = DotDic(json.loads(open(args.config_path, 'r').read()))
+    # opt = DotDic(json.loads(open(args.config_path, 'r').read()))
+    opt = DotDic(json.loads(open('switch_3_rial.json', 'r').read()))
 
     result_path = None
     if args.results_path:

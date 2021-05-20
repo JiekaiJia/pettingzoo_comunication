@@ -35,8 +35,8 @@ class SwitchCNet(nn.Module):
 		# Communication enabled
 		if opt.comm_enabled:
 			self.messages_mlp = nn.Sequential()
-			if opt.model_bn:
-				self.messages_mlp.add_module('batchnorm1', nn.BatchNorm1d(self.comm_size))
+			# if opt.model_bn:
+			# 	self.messages_mlp.add_module('batchnorm1', nn.BatchNorm1d(self.comm_size))
 			self.messages_mlp.add_module('linear1', nn.Linear(self.comm_size, opt.model_rnn_size))
 			if opt.model_comm_narrow:
 				self.messages_mlp.add_module('relu1', nn.ReLU(inplace=True))
@@ -51,8 +51,8 @@ class SwitchCNet(nn.Module):
 		if dropout_rate > 0:
 			self.outputs.add_module('dropout1', nn.Dropout(dropout_rate))
 		self.outputs.add_module('linear1', nn.Linear(opt.model_rnn_size, opt.model_rnn_size))
-		if opt.model_bn:
-			self.outputs.add_module('batchnorm1', nn.BatchNorm1d(opt.model_rnn_size))
+		# if opt.model_bn:
+		# 	self.outputs.add_module('batchnorm1', nn.BatchNorm1d(opt.model_rnn_size))
 		self.outputs.add_module('relu1', nn.ReLU(inplace=True))
 		self.outputs.add_module('linear2', nn.Linear(opt.model_rnn_size, opt.game_action_space_total))
 
@@ -103,7 +103,6 @@ class SwitchCNet(nn.Module):
 
 		z = z_a + z_o + z_u + z_m
 		z = z.unsqueeze(1)
-		print(z.shape)
 
 		rnn_out, h_out = self.rnn(z, hidden)
 		outputs = self.outputs(rnn_out[:, -1, :].squeeze())

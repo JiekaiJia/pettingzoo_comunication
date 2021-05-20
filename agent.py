@@ -45,7 +45,7 @@ class CNetAgent:
 		if not train_mode:
 			eps = 0
 		opt = self.opt
-		action_range, comm_range = self.game.get_action_range(step, self.id)
+		action_range, comm_range = self.game.get_action_range()
 		action = torch.zeros(opt.bs, dtype=torch.long)
 		action_value = torch.zeros(opt.bs)
 		comm_action = torch.zeros(opt.bs).int()
@@ -68,7 +68,6 @@ class CNetAgent:
 				action_value[b] = q[b, action[b]]
 			else:
 				action_value[b], action[b] = q[b, a_range].max(0)
-			action[b] = action[b] + 1
 
 			q_c_range = range(opt.game_action_space, opt.game_action_space_total)
 			if comm_range[b, 1].item() > 0:

@@ -25,7 +25,7 @@ if __name__ == '__main__':
     # Environment parameters
     num_agents = 3
     local_ratio = 0.5
-    max_cycles = 50
+    max_cycles = 25
 
     # function that outputs the environment you wish to register.
     def env_creator(config):
@@ -132,27 +132,31 @@ if __name__ == '__main__':
         log_to_driver=False
     )
 
-    trainer = get_trainer_class(alg_name)(env='simple_spread', config=config)
+    # Stop criteria
+    stop = {
+        # "episode_reward_mean": -115,
+        "training_iteration": 2000000,
+    }
 
-    with open('checkpoints.txt', 'r') as f:
-        checkpoint_path = f.read()
+    # Train
+    results = tune.run(
+        alg_name,
+        stop=stop,
+        config=config,
+        checkpoint_at_end=True,
+        checkpoint_freq=100,
+        # resources_per_trial={"cpu": 2},
+        num_samples=1
+    )
 
-    trainer.restore(checkpoint_path)
-    cumulative_reward = 0
-    env = simple_spread_v2.env(max_cycles=50)
-    env.reset()
+    # Get the tuple of checkpoint_path and metric
+    checkpoints = results.get_trial_checkpoints_paths(
+        trial=results.get_best_trial("episode_reward_mean", mode="max"),
+        metric="episode_reward_mean"
+    )
 
-    for agent in env.agent_iter():
-        env.render()
-        observation, reward, done, info = env.last()
-        id = env.agents.index(agent)
-        if not done:
-            action = trainer.compute_action(observation, policy_id=id)
-        else:
-            action = None
-        env.step(action)
-        cumulative_reward += reward
+    # Write the checkpoint_file in the .txt file
+    with open('checkpoints.txt', 'w') as f:
+        f.write(checkpoints[0][0])
 
-    print(cumulative_reward)
     ray.shutdown()
-

@@ -59,8 +59,10 @@ class MpeGame:
 
 	def step(self, a_t):
 		self.env.step(a_t)
-		self.observation, self.reward, self.done, self.info = self.env.last()
 		self.step_count += 1
+
+	def get_reward(self):
+		self.observation, self.reward, self.done, self.info = self.env.last()
 
 		return self.reward, self.done
 
