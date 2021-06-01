@@ -21,3 +21,9 @@ Executes the world.step() and updates the reward at that time.
     - agent reward: minus the amount of agents' collisions.
 - observation: [self_vel, self_pos, landmark_rel_positions, other_agent_rel_positions, communication]
 - action: [no_action, move_left, move_right, move_down, move_up]
+
+### RLlib
+- rollout_worker.py
+- sampler.py (by default SyncSampler)
+- dynamic_tf_policy.py
+- 
