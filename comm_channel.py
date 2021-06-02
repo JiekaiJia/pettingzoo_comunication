@@ -2,6 +2,8 @@ import copy
 
 import numpy as np
 from pettingzoo.utils.wrappers.base import BaseWrapper
+from gym.spaces import Box, Discrete
+from scipy.special import softmax
 import torch
 
 from dru import DRU
@@ -21,8 +23,12 @@ class CommunicationWrapper(BaseWrapper):
     def step(self, action):
         if isinstance(action, torch.Tensor):
             action = action.numpy()[0]
-        self.steps += 1
+        if isinstance(action, int):
+            pass
+        else:
+            action = np.argmax(action)
         super().step(action)
+        self.steps += 1
 
     def message_update(self, comm_action=None, q_comm=None):
         self.comm_agents[self.agent_selection].message_update(comm_action=comm_action, q_comm=q_comm)
@@ -47,21 +53,107 @@ class CommunicationWrapper(BaseWrapper):
         return str(self.env)
 
 
+### not finished
+class ParallelCommWrapper:
+    """this wrapper adds communication channel to the environment."""
+    def __init__(self, env, comm_bits):
+        self.env = env
+        self.possible_agents = env.possible_agents
+        self.nagents = len(self.possible_agents)
+        self.observation_spaces = {
+            k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf), shape=(v.shape[0]+(self.nagents-1)*comm_bits,), dtype=np.float32)
+            if isinstance(v, Box) else Discrete(v.n+comm_bits) for k, v in env.observation_spaces.items()
+        }
+        self.action_spaces = {
+            k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf), shape=(v.shape[0]+comm_bits,), dtype=np.float32)
+            if isinstance(v, Box) else Discrete(v.n+comm_bits) for k, v in env.action_spaces.items()
+        }
+        self.metadata = env.metadata
+        self.comm_bits = comm_bits
+        self.comm_method = 'Rial'
+
+        # Not every environment has the .state_space attribute implemented
+        try:
+            self.state_space = self.env.state_space
+        except AttributeError:
+            pass
+
+    def seed(self, seed=None):
+        return self.env.seed(seed)
+
+    def reset(self):
+        observations = self.env.reset()
+        tmp = np.zeros((self.nagents - 1) * self.comm_bits)
+        self.agents = self.env.agents
+        self.comm_agents = {agent: CommAgent(self.comm_bits, agent, self.env, self.comm_method) for agent in self.agents}
+        return {k: np.concatenate((v, tmp)) for k, v in observations.items()}
+
+    def step(self, actions):
+        acts = {}
+        for agent in self.agents:
+            if isinstance(actions[agent], int):
+                pass
+            else:
+                acts[agent] = np.argmax(actions[agent][:-self.comm_bits])
+                self.comm_agents[agent].comm_action = actions[agent][-self.comm_bits:]
+        self.update_messages()
+        self.send_messages()
+        self.receive_message()
+        observations, rewards, dones, infos = self.env.step(acts)
+        obs = {}
+        for k, v in observations.items():
+            msg = []
+            print(len(self.comm_agents[k].input_queue))
+            for message in self.comm_agents[k].input_queue:
+                msg.append(message.message)
+
+            obs[k] = np.concatenate((v, np.reshape(msg, (-1))))
+
+        return obs, rewards, dones, infos
+
+    def render(self, mode="human"):
+        return self.env.render(mode)
+
+    def state(self):
+        return self.env.state()
+
+    def close(self):
+        return self.env.close()
+
+    def update_messages(self):
+        for agent in self.agents:
+            self.comm_agents[agent].message_update()
+
+    def send_messages(self):
+        for agent in self.agents:
+            self.comm_agents[agent].send_messages()
+
+    def receive_message(self):
+        for agent in self.agents:
+            self.comm_agents[agent].receive_messages(self.comm_agents)
+
+    # sampleMessage = Message(self.agentID, randomAgentID, str(randint(0, 1000)))
+    # self.sendMessage(sampleMessage)
+
+    def __str__(self):
+        return str(self.env)
+
+
 class CommAgent:
-    def __init__(self, comm_bits, agent, env):
+    def __init__(self, comm_bits, agent, env, comm):
         self.name = agent
         self.env = env
         self.comm_bits = comm_bits
         self.receivers = []
-        self.comm_action = None
+        self.comm_method = comm
+        self.comm_action = np.zeros(comm_bits)
+        self.comm_vector = np.zeros(comm_bits)
         self.comm_state = np.zeros(comm_bits)
-        self.output_queue = []
         self.reset()
 
     def reset(self, limited=False):
         self._pick_receiver(limited=limited)
         self.messages = [Message(self.name, receiver, self.comm_state) for receiver in self.receivers]
-        self.output_queue.extend(copy.deepcopy(self.messages))
 
     def _pick_receiver(self, limited=False):
         if limited:
@@ -72,38 +164,27 @@ class CommAgent:
                 if agent is not self.name:
                     self.receivers.append(agent)
 
-    def message_update(self, q_comm=None):
-        # if isinstance(q_comm, torch.Tensor):
-        #     q_comm = q_comm.detach().numpy()[0]
-        if isinstance(q_comm, torch.Tensor):
-            q_comm = q_comm.detach().numpy()
-
+    def message_update(self):
         # noise = np.random.randn(self.comm_bits)
         noise = 0
-        if comm_action is None and q_comm is None:
-            pass
-        elif comm_action == 0:
-            self.comm_state = q_comm + noise
-        else:
-            self.comm_action = comm_action
-            comm_vector = np.zeros(self.comm_bits)
-            comm_vector[comm_action] = 1
-            self.comm_state = comm_vector + noise
+        if self.comm_method == 'Rial':
+            onehot = np.zeros(self.comm_bits)
+            d = np.argmax(self.comm_action)
+            onehot[d] = 1
+            self.comm_state = softmax(onehot + noise)
+        elif self.comm_method == 'Dial':
+            self.comm_state = softmax(self.comm_vector + noise)
 
         for message in self.messages:
             message.update(self.comm_state)
 
-    def get_c_action(self):
-        return self.comm_action
-
     def send_messages(self):
         # Put message in the output queue
+        self.output_queue = []
         self.output_queue.extend(copy.deepcopy(self.messages))
         for message in self.messages:
             # print(f'Agent {self.name} sent message: {message.to_json()}')
             pass
-
-        return self.output_queue
 
     def receive_messages(self, comm_agents):
         self.input_queue = []
@@ -115,7 +196,6 @@ class CommAgent:
                         self.input_queue.append(message)
                         agent.output_queue.remove(message)
                         # print(f'{self.name} received message: {message.to_json()}')
-        return self.input_queue
 
 
 class Message:

@@ -1,0 +1,99 @@
+{
+  "actor_hidden_activation": "relu",
+  "actor_hiddens": [
+    64,
+    64
+  ],
+  "actor_lr": 0.01,
+  "adv_policy": "maddpg",
+  "batch_mode": "truncate_episodes",
+  "buffer_size": 1000000,
+  "critic_hidden_activation": "relu",
+  "critic_hiddens": [
+    64,
+    64
+  ],
+  "critic_lr": 0.01,
+  "env": "mpe",
+  "env_config": {
+    "local_ratio": 0.5,
+    "max_cycles": 25,
+    "num_agents": 3
+  },
+  "gamma": 0.95,
+  "good_policy": "maddpg",
+  "horizon": 25,
+  "learning_starts": 25600,
+  "log_level": "ERROR",
+  "multiagent": {
+    "policies": {
+      "agent_0": [
+        null,
+        "Box(-inf, inf, (22,), float32)",
+        "Discrete(7)",
+        {
+          "act_space_dict": {
+            "0": "Discrete(7)",
+            "1": "Discrete(7)",
+            "2": "Discrete(7)"
+          },
+          "agent_id": 0,
+          "obs_space_dict": {
+            "0": "Box(-inf, inf, (22,), float32)",
+            "1": "Box(-inf, inf, (22,), float32)",
+            "2": "Box(-inf, inf, (22,), float32)"
+          },
+          "use_local_critic": false
+        }
+      ],
+      "agent_1": [
+        null,
+        "Box(-inf, inf, (22,), float32)",
+        "Discrete(7)",
+        {
+          "act_space_dict": {
+            "0": "Discrete(7)",
+            "1": "Discrete(7)",
+            "2": "Discrete(7)"
+          },
+          "agent_id": 1,
+          "obs_space_dict": {
+            "0": "Box(-inf, inf, (22,), float32)",
+            "1": "Box(-inf, inf, (22,), float32)",
+            "2": "Box(-inf, inf, (22,), float32)"
+          },
+          "use_local_critic": false
+        }
+      ],
+      "agent_2": [
+        null,
+        "Box(-inf, inf, (22,), float32)",
+        "Discrete(7)",
+        {
+          "act_space_dict": {
+            "0": "Discrete(7)",
+            "1": "Discrete(7)",
+            "2": "Discrete(7)"
+          },
+          "agent_id": 2,
+          "obs_space_dict": {
+            "0": "Box(-inf, inf, (22,), float32)",
+            "1": "Box(-inf, inf, (22,), float32)",
+            "2": "Box(-inf, inf, (22,), float32)"
+          },
+          "use_local_critic": false
+        }
+      ]
+    },
+    "policy_mapping_fn": "<function main.<locals>.<lambda> at 0x7ffb7820e4c0>"
+  },
+  "n_step": 1,
+  "num_envs_per_worker": 4,
+  "num_gpus": 0,
+  "num_gpus_per_worker": 0,
+  "num_workers": 1,
+  "render_env": true,
+  "rollout_fragment_length": 25,
+  "tau": 0.01,
+  "train_batch_size": 1024
+}

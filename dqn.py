@@ -258,17 +258,17 @@ if __name__ == '__main__':
     local_ratio = 0.5
     max_cycles = 25
 
-    # function that outputs the environment you wish to register.
-    def env_creator(config):
-        my_env = simple_spread_v2.env(
-            max_cycles=config.get('max_cycles', max_cycles),
-            N=config.get('num_agents', num_agents),
-            local_ratio=config.get('local_ratio', local_ratio)
-        )
-        my_env = dtype_v0(my_env, dtype=float32)
-        # env = color_reduction_v0(env, mode='R')
-        # env = normalize_obs_v0(env)
-        return my_env
+    # # function that outputs the environment you wish to register.
+    # def env_creator(config):
+    #     my_env = simple_spread_v2.env(
+    #         max_cycles=config.get('max_cycles', max_cycles),
+    #         N=config.get('num_agents', num_agents),
+    #         local_ratio=config.get('local_ratio', local_ratio)
+    #     )
+    #     my_env = dtype_v0(my_env, dtype=float32)
+    #     # env = color_reduction_v0(env, mode='R')
+    #     # env = normalize_obs_v0(env)
+    #     return my_env
 
 
     def mpe_env(base_env):
@@ -291,6 +291,7 @@ if __name__ == '__main__':
     config['num_gpus'] = int(os.environ.get('RLLIB_NUM_GPUS', '0'))
     # Number of rollout worker actors to create for parallel sampling.
     config['num_workers'] = 3
+    config['render_env'] = True
 
     # === Settings for the Trainer process ===
     # Whether layers should be shared for the value function.
@@ -349,20 +350,21 @@ if __name__ == '__main__':
     # How many steps of the model to sample before learning starts.
     config['learning_starts'] = 10000
     # Learning rate for adam optimizer.
-    config['lr'] = 0.0001
+    config['lr'] = 0.001
     # Divide episodes into fragments of this many steps from each worker and for each agent during rollouts!
-    config['rollout_fragment_length'] = 4
+    config['rollout_fragment_length'] = 25
     # Training batch size -> Fragments are concatenated up to this point.
-    config['train_batch_size'] = 32
+    config['train_batch_size'] = 1024
 
     # === Replay buffer ===
     # Size of the replay buffer. Note that if async_updates is set, then
     # each worker will have a replay buffer of this size.
-    config['buffer_size'] = 50000
+    config['buffer_size'] = int(1e6)
 
     # === Exploration Settings ===
     # Switch to greedy actions in evaluation workers.
-    config['evaluation_interval'] = 50
+    config['evaluation_interval'] = 1
+    config['evaluation_num_episodes'] = 20
     config['evaluation_config'] = {
         'explore': False,
         # If True, try to render the environment on the local worker or on worker 1
@@ -370,15 +372,15 @@ if __name__ == '__main__':
         # If True, stores videos in this relative directory inside the default
         'record_env': 'Videos'
     }
-    # config['explore'] = False
-    config['exploration_config'] = {
-        # The Exploration class to use.
-        'type': 'EpsilonGreedy',
-        # Config for the Exploration class' constructor:
-        'initial_epsilon': 1.0,
-        'epsilon_timesteps': 200000,  # Timesteps over which to anneal epsilon.
-        'final_epsilon': 0
-    }
+    config['explore'] = False
+    # config['exploration_config'] = {
+    #     # The Exploration class to use.
+    #     'type': 'EpsilonGreedy',
+    #     # Config for the Exploration class' constructor:
+    #     'initial_epsilon': 1.0,
+    #     'epsilon_timesteps': 400000,  # Timesteps over which to anneal epsilon.
+    #     'final_epsilon': 0
+    # }
 
     # Register env
     register_env('simple_spread', lambda config: mpe_env(simple_spread_v2))
@@ -393,7 +395,7 @@ if __name__ == '__main__':
     # Stop criteria
     stop = {
         # "episode_reward_mean": -115,
-        "training_iteration": 600,
+        "training_iteration": 1400,
     }
     # trainer = get_trainer_class(alg_name)(env='simple_spread', config=config)
     # model = trainer.get_policy(policy_id='same').model
@@ -409,7 +411,7 @@ if __name__ == '__main__':
         config=config,
         checkpoint_at_end=True,
         checkpoint_freq=100,
-        # restore='/home/jiekaijia/ray_results/DQN/DQN_simple_spread_333cf_00000_0_2021-05-30_00-42-51/checkpoint_000200/checkpoint-200',
+        restore='/home/jiekaijia/ray_results/DQN/DQN_simple_spread_00b5b_00000_0_2021-06-02_11-59-37/checkpoint_000700/checkpoint-700',
         # resources_per_trial={"cpu": 2},
         num_samples=1
     )
