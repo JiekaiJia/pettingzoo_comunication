@@ -1,15 +1,20 @@
 from gym import spaces
 import numpy as np
 from scipy.special import softmax
+from pettingzoo.mpe import simple_spread_v2, simple_speaker_listener_v3, simple_tag_v2, simple_reference_v2, simple_world_comm_v2
+from pettingzoo.utils.conversions import to_parallel_wrapper
+from pettingzoo.utils.wrappers import AssertOutOfBoundsWrapper, OrderEnforcingWrapper
+from utils import mpe_parallel_env
+
+env = mpe_parallel_env(simple_speaker_listener_v3)
+obs = env.reset()
+# print(obs)
+for step in range(25):
+    # env.render()
+    actions = {agent: np.random.randint(0, env.action_spaces[agent].n) for agent in env.agents}
+    observations, rewards, dones, infos = env.step(actions)
+    # print(observations)
 
 
-x = spaces.Box(low=-np.float32(np.inf), high=+np.float32(np.inf), shape=(20,), dtype=np.float32)
-y = spaces.Discrete(5)
-z = [1,2,3,3]
-obs = {f'{i}': z for i in range(4)}
-n = np.ones((1,4))
-print(n.shape)
-m = np.reshape(n, (-1))
-print(m.shape)
 
 

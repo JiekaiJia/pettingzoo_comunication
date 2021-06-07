@@ -14,6 +14,15 @@ Calculates the agents' position, velocity and communication state (state.c = act
 ### SimpleEnv class in simple_env.py
 - step()  
 Executes the world.step() and updates the reward at that time.
+### Environment
+- simple spread 
+  3 agents learn to cover 3 landmarks.
+- simple tag  
+  1 good agent, 3 adversaries. Adversaries are rewarded by catching good agent. Adversaries observe self_vel, self_pos, 
+  landmarks_pos, other_agents_pos and good agent's vel. good agent observes self_vel, self_pos, landmarks_pos, 
+  other_agents_pos.
+- simple speaker
+- simple adversary
 
 ### Basic concepts
 - reward: reward = global reward * (1 - ratio) + agent reward * ratio 

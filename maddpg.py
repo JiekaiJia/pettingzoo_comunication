@@ -1,40 +1,31 @@
-import ray
-from ray.tune import run_experiments
-from ray.tune.registry import register_trainable, register_env
-from ray.rllib.contrib.maddpg.maddpg import MADDPGTrainer
-from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
-from ray.rllib.env import PettingZooEnv
-from pettingzoo.mpe import simple_spread_v2
-from comm_channel import ParallelCommWrapper
-import argparse
+""""""
 
+import argparse
 import os
 
+from pettingzoo.mpe import (
+    simple_crypto_v2,
+    simple_reference_v2,
+    simple_speaker_listener_v3,
+    simple_spread_v2,
+    simple_tag_v2,
+    simple_world_comm_v2,
+)
+import ray
+from ray.rllib.contrib.maddpg.maddpg import MADDPGTrainer
+from ray.tune import run_experiments
+from ray.tune.registry import register_trainable, register_env
+
+from utils import parallel_env, parallel_comm_env
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-
-class CustomStdOut(object):
-    def _log_result(self, result):
-        if result["training_iteration"] % 50 == 0:
-            try:
-                print("steps: {}, episodes: {}, mean episode reward: {}, agent episode reward: {}, time: {}".format(
-                    result["timesteps_total"],
-                    result["episodes_total"],
-                    result["episode_reward_mean"],
-                    result["policy_reward_mean"],
-                    round(result["time_total_s"] - self.cur_time, 3)
-                ))
-            except:
-                pass
-
-            self.cur_time = result["time_total_s"]
 
 
 def parse_args():
     parser = argparse.ArgumentParser("MADDPG with OpenAI MPE")
 
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_spread",
+    parser.add_argument("--scenario", type=str, default="simple_tag",
                         choices=['simple', 'simple_speaker_listener',
                                  'simple_crypto', 'simple_push',
                                  'simple_tag', 'simple_spread', 'simple_adversary'],
@@ -66,7 +57,7 @@ def parse_args():
                         help="number of units in the mlp")
 
     # Checkpoint
-    parser.add_argument("--checkpoint-freq", type=int, default=7500,
+    parser.add_argument("--checkpoint-freq", type=int, default=1,
                         help="save model once every time this many iterations are completed")
     parser.add_argument("--local-dir", type=str, default="./ray_results",
                         help="path to save checkpoints")
@@ -83,20 +74,13 @@ def parse_args():
 
 def main(args):
     ray.init()
-    MADDPGAgent = MADDPGTrainer.with_updates(
-        mixins=[CustomStdOut]
-    )
-    register_trainable("MADDPG", MADDPGAgent)
+    register_trainable("MADDPG", MADDPGTrainer)
 
-    def mpe_env(base_env):
-        env = base_env.parallel_env()
-        env = ParallelCommWrapper(env, 2)
-        env = ParallelPettingZooEnv(env)
-        return env
-
-    env = mpe_env(simple_spread_v2)
-
-    register_env("mpe", lambda env: mpe_env(simple_spread_v2))
+    # Create test environment.
+    env = parallel_comm_env(simple_spread_v2)()
+    # Register env
+    env_name = 'simple_spread'
+    register_env(env_name, lambda _: parallel_comm_env(simple_spread_v2)())
 
     def gen_policy(i):
         use_local_critic = [
@@ -115,24 +99,26 @@ def main(args):
             }
         )
 
-    policies = {f"agent_{i}": gen_policy(i) for i, _ in enumerate(env.agents)}
+    policies = {agent: gen_policy(i) for i, agent in enumerate(env.agents)}
 
     ray.tune.run(
             "MADDPG",
             stop={
                 "episodes_total": args.num_episodes,
             },
-            checkpoint_at_end=args.checkpoint_freq,
+            checkpoint_at_end=True,
+            checkpoint_freq=args.checkpoint_freq,
             local_dir=args.local_dir,
-            restore=args.restore,
+            # restore='/home/jiekaijia/PycharmProjects/pettingzoo_comunication/ray_results/MADDPG/MADDPG_mpe_2ff0a_00000_0_2021-06-07_14-23-38/checkpoint_000119/checkpoint-119',
+            # args.restore,
             config={
                 # === Log ===
                 "log_level": "ERROR",
                 'render_env': True,
 
                 # === Environment ===
-                'env': 'mpe',
-                "env_config": {'max_cycles': 25, 'num_agents': 3, 'local_ratio': 0.5},
+                'env': env_name,
+                # "env_config": {'max_cycles': 25, 'num_agents': 3, 'local_ratio': 0.5},
                 "num_envs_per_worker": args.num_envs_per_worker,
                 "horizon": args.max_episode_len,
 
@@ -156,15 +142,15 @@ def main(args):
                 # --- Optimization ---
                 "actor_lr": args.lr,
                 "critic_lr": args.lr,
-                "learning_starts": args.train_batch_size * args.max_episode_len,
+                "learning_starts": 1, #args.train_batch_size * args.max_episode_len,
                 "rollout_fragment_length": args.sample_batch_size,
                 "train_batch_size": args.train_batch_size,
                 "batch_mode": "truncate_episodes",
 
                 # --- Parallelism ---
                 "num_workers": args.num_workers,
-                "num_gpus": args.num_gpus,
-                "num_gpus_per_worker": 0,
+                "num_gpus": int(os.environ.get('RLLIB_NUM_GPUS', '0')),
+                # "num_gpus_per_worker": 0,
 
                 # === Multi-agent setting ===
                 "multiagent": {
