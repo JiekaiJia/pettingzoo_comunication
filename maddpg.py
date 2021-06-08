@@ -16,7 +16,7 @@ from ray.rllib.contrib.maddpg.maddpg import MADDPGTrainer
 from ray.tune import run_experiments
 from ray.tune.registry import register_trainable, register_env
 
-from utils import parallel_env, parallel_comm_env
+from utils import parallel_env, parallel_comm_env, main_comm_env, main_env
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -25,14 +25,9 @@ def parse_args():
     parser = argparse.ArgumentParser("MADDPG with OpenAI MPE")
 
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_tag",
-                        choices=['simple', 'simple_speaker_listener',
-                                 'simple_crypto', 'simple_push',
-                                 'simple_tag', 'simple_spread', 'simple_adversary'],
-                        help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=25,
                         help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=60000,
+    parser.add_argument("--num-episodes", type=int, default=25000,
                         help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0,
                         help="number of adversaries")
@@ -57,7 +52,7 @@ def parse_args():
                         help="number of units in the mlp")
 
     # Checkpoint
-    parser.add_argument("--checkpoint-freq", type=int, default=1,
+    parser.add_argument("--checkpoint-freq", type=int, default=5000,
                         help="save model once every time this many iterations are completed")
     parser.add_argument("--local-dir", type=str, default="./ray_results",
                         help="path to save checkpoints")
@@ -77,10 +72,10 @@ def main(args):
     register_trainable("MADDPG", MADDPGTrainer)
 
     # Create test environment.
-    env = parallel_comm_env(simple_spread_v2)()
+    env = parallel_env(simple_spread_v2)()
     # Register env
     env_name = 'simple_spread'
-    register_env(env_name, lambda _: parallel_comm_env(simple_spread_v2)())
+    register_env(env_name, lambda _: parallel_env(simple_spread_v2)())
 
     def gen_policy(i):
         use_local_critic = [
@@ -142,7 +137,7 @@ def main(args):
                 # --- Optimization ---
                 "actor_lr": args.lr,
                 "critic_lr": args.lr,
-                "learning_starts": 1, #args.train_batch_size * args.max_episode_len,
+                "learning_starts": args.train_batch_size * args.max_episode_len,
                 "rollout_fragment_length": args.sample_batch_size,
                 "train_batch_size": args.train_batch_size,
                 "batch_mode": "truncate_episodes",
