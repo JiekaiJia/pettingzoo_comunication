@@ -2,6 +2,8 @@
 directly use the wrapper in comm_channel.py."""
 
 import numpy as np
+from pettingzoo.utils.conversions import to_parallel_wrapper
+from pettingzoo.utils.wrappers import AssertOutOfBoundsWrapper, OrderEnforcingWrapper
 from ray.rllib.env import PettingZooEnv
 from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from supersuit import pad_action_space_v0, pad_observations_v0
@@ -9,10 +11,16 @@ from supersuit import pad_action_space_v0, pad_observations_v0
 from comm_channel import ParallelCommWrapper, CommWrapper
 
 
-def main_comm_env(base_env, comm_bits=5):
+def main_comm_env(base_env, comm_dict):
     """Wrap the communication channel into Pettingzoo main environment, and padding the environment."""
     def comm_env(**kwargs):
-        env = CommWrapper(base_env, comm_bits, **kwargs)
+        raw_env = base_env.raw_env(**kwargs)
+        # Set all agents to silent
+        for agent in raw_env.world.agents:
+            agent.silent = True
+        env = AssertOutOfBoundsWrapper(raw_env)
+        env = OrderEnforcingWrapper(env)
+        env = CommWrapper(env, comm_dict)
         env = pad_observations_v0(env)
         env = pad_action_space_v0(env)
         env = _PettingZooEnv(env)
@@ -31,10 +39,17 @@ def main_env(base_env):
     return env
 
 
-def parallel_comm_env(base_env, comm_bits=5):
+def parallel_comm_env(base_env, comm_dict):
     """Wrap the communication channel into Pettingzoo parallel environment, and padding the environment."""
     def comm_env(**kwargs):
-        env = ParallelCommWrapper(base_env, comm_bits, **kwargs)
+        raw_env = base_env.raw_env(**kwargs)
+        # Set all agents to silent
+        for agent in raw_env.world.agents:
+            agent.silent = True
+        env = AssertOutOfBoundsWrapper(raw_env)
+        env = OrderEnforcingWrapper(env)
+        env = to_parallel_wrapper(env)
+        env = ParallelCommWrapper(env, comm_dict)
         env = pad_observations_v0(env)
         env = pad_action_space_v0(env)
         env = _ParallelPettingZooEnv(env)
@@ -81,3 +96,8 @@ class _ParallelPettingZooEnv(ParallelPettingZooEnv):
             else:
                 action_dict[k] = np.argmax(v)
         return super().step(action_dict)
+
+
+def init_comm_dict(env):
+    return {'comm_bits': 0, 'receivers': {agent: [] for agent in env.possible_agents}}
+

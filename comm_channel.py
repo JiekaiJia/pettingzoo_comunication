@@ -4,64 +4,65 @@ import copy
 
 from gym.spaces import Box, Discrete
 import numpy as np
-from pettingzoo.utils.conversions import to_parallel_wrapper
 from pettingzoo.utils.env import ParallelEnv
-from pettingzoo.utils.wrappers import AssertOutOfBoundsWrapper, OrderEnforcingWrapper
 from pettingzoo.utils.wrappers.base import BaseWrapper
 from scipy.special import softmax
 
 
 class CommWrapper(BaseWrapper):
-    """This wrapper adds communication channel to the environment, it's specific to pettingzoo.env()."""
-    def __init__(self, base_env, comm_bits, **kwargs):
-        raw_env = base_env.raw_env(**kwargs)
-        # Set all agents to silent
-        for agent in raw_env.world.agents:
-            agent.silent = True
-        env = AssertOutOfBoundsWrapper(raw_env)
-        env = OrderEnforcingWrapper(env)
+    """This wrapper adds communication channel to the environment, it's specific to pettingzoo.env().
+    env:
+    receivers: A dictionary that includes information about communication.
+    Example: receivers = {
+                 agent_0: [agent_1, agent_2],
+                 agent_1: [agent_0, agent_2],
+                 agent_2: [agent_0, agent_1],
+                 adversary_0: [adversary_1],
+                 adversary_1: [adversary_0],
+            }"""
+    def __init__(self, env, comm_dict):
         super().__init__(env)
-        self.comm_bits = comm_bits
-        self.comm_method = 'Rial'
+        self.comm_bits = comm_dict['comm_bits']
+        self.comm_method = 'RIAL'
         self.n_actions = {agent: self.env.action_spaces[agent].n for agent in self.possible_agents}
+        receivers = comm_dict['receivers']
         self.comm_agents = {
-            agent: CommAgent(self.comm_bits, agent, self.env, self.comm_method) for agent in self.possible_agents
+            agent: CommAgent({'comm_bits': self.comm_bits, 'receivers': receivers[agent]}, agent, self.env, self.comm_method) for agent in self.possible_agents
         }
-        self.n_agents = {}
-        pre_key = None
-        count = 0
-        for agent1 in self.possible_agents:
-            key = agent1[:5]
-            if key != pre_key:
-                count = 0
-                pre_key = key
-                for agent2 in self.possible_agents:
-                    if key in agent2 or key in 'listener' or 'alice' in agent2:
-                        count += 1
-            self.n_agents[agent1] = count
+        self.n_messages = {}
+        for agent in self.possible_agents:
+            count = 0
+            for _, rec_list in receivers.items():
+                if agent in rec_list:
+                    count += 1
+            self.n_messages[agent] = count
 
         # Extend the observation space with message.
         self.observation_spaces = {
             k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf),
-                   shape=(v.shape[0] + (self.n_agents[k] - 1) * comm_bits,), dtype=np.float32)
-            if isinstance(v, Box) else Discrete(v.n + (self.n_agents[k] - 1) * comm_bits) for k, v in
+                   shape=(v.shape[0] + self.n_messages[k] * self.comm_bits,), dtype=np.float32)
+            if isinstance(v, Box) else Discrete(v.n + self.n_messages[k] * self.comm_bits) for k, v in
             env.observation_spaces.items()
         }
 
-        factor = {}
-        for k, v in self.comm_agents.items():
-            if v.receivers:
-                # If agent has receivers, then it will have comm_action
-                factor[k] = 1
-            else:
-                # If agent doesn't have receivers, then it will have no comm_action
-                factor[k] = 0
-        # Extend the action space with communication actions.
-        self.action_spaces = {
-            k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf), shape=(v.shape[0] * comm_bits ** factor[k],),
-                   dtype=np.float32)
-            if isinstance(v, Box) else Discrete(v.n * comm_bits ** factor[k]) for k, v in env.action_spaces.items()
-        }
+        if self.comm_method == 'RIAL':
+            factor = {}
+            for k, v in self.comm_agents.items():
+                if v.receivers:
+                    # If agent has receivers, then it will have comm_action
+                    factor[k] = 1
+                else:
+                    # If agent doesn't have receivers, then it will have no comm_action
+                    factor[k] = 0
+            # Extend the action space with communication actions.
+            self.action_spaces = {
+                k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf),
+                       shape=(v.shape[0] * self.comm_bits ** factor[k],), dtype=np.float32)
+                if isinstance(v, Box) else Discrete(v.n * self.comm_bits ** factor[k]) for k, v in
+                env.action_spaces.items()
+            }
+        elif self.comm_method == 'DIAL':
+            self.action_spaces = env.action_spaces
 
     def last(self, observe=True):
         msg = []
@@ -76,17 +77,22 @@ class CommWrapper(BaseWrapper):
 
         return obs, reward, done, info
 
-    def step(self, action):
+    def step(self, action, comm_vector=None):
         # Compute physical actions and communication actions.
-        if isinstance(action, (np.int64, np.int32, np.int16, np.int8, int)):
-            act = action % self.n_actions[self.agent_selection]
-            self.comm_agents[self.agent_selection].comm_action = action // self.n_actions[self.agent_selection]
-        elif not action:
-            act = action
-        else:
-            number = np.argmax(action)
-            act = number % self.n_actions[self.agent_selection]
-            self.comm_agents[self.agent_selection].comm_action = number // self.n_actions[self.agent_selection]
+        self.comm_agents[self.agent_selection].comm_vector = comm_vector
+        if isinstance(self.action_spaces[self.agent_selection], Discrete):
+            if isinstance(action, (np.int64, np.int32, np.int16, np.int8, int)):
+                act = action % self.n_actions[self.agent_selection]
+                self.comm_agents[self.agent_selection].comm_action = action // self.n_actions[self.agent_selection]
+            elif not action:
+                act = action
+            else:
+                number = np.argmax(action)
+                act = number % self.n_actions[self.agent_selection]
+                self.comm_agents[self.agent_selection].comm_action = number // self.n_actions[self.agent_selection]
+        elif isinstance(self.action_spaces[self.agent_selection], Box):
+            pass
+
         self.update_messages()
         self.send_messages()
         super().step(act)
@@ -105,56 +111,60 @@ class CommWrapper(BaseWrapper):
 
 
 class ParallelCommWrapper(ParallelEnv):
-    """This wrapper adds communication channel to the environment, it's specific to pettingzoo.parallelenv()."""
-
-    def __init__(self, base_env, comm_bits, **kwargs):
-        raw_env = base_env.raw_env(**kwargs)
-
-        # Set all agents to silent
-        for agent in raw_env.world.agents:
-            agent.silent = True
-        env = AssertOutOfBoundsWrapper(raw_env)
-        env = OrderEnforcingWrapper(env)
-        env = to_parallel_wrapper(env)
+    """This wrapper adds communication channel to the environment, it's specific to pettingzoo.parallelenv().
+    env:
+    receivers: A dictionary that includes information about communication.
+    Example: receivers = {
+                 agent_0: [agent_1, agent_2],
+                 agent_1: [agent_0, agent_2],
+                 agent_2: [agent_0, agent_1],
+                 adversary_0: [adversary_1],
+                 adversary_1: [adversary_0],
+            }"""
+    def __init__(self, env, comm_dict):
         self.env = env
+        self.comm_bits = comm_dict['comm_bits']
         self.possible_agents = env.possible_agents
-        self.comm_bits = comm_bits
-        self.comm_method = 'Rial'
+        self.comm_method = 'RIAL'
         self.n_actions = {agent: self.env.action_spaces[agent].n for agent in self.possible_agents}
+        receivers = comm_dict['receivers']
         self.comm_agents = {
-            agent: CommAgent(self.comm_bits, agent, self.env, self.comm_method) for agent in self.possible_agents
+            agent: CommAgent({'comm_bits': self.comm_bits, 'receivers': receivers[agent]}, agent, self.env, self.comm_method) for agent in self.possible_agents
         }
-        self.n_agents = {}
-        pre_key = None
-        count = 0
-        for agent1 in self.possible_agents:
-            key = agent1[:5]
-            if key != pre_key:
-                count = 0
-                pre_key = key
-                for agent2 in self.possible_agents:
-                    if key in agent2 or key in 'listener' or 'alice' in agent2:
-                        count += 1
-            self.n_agents[agent1] = count
+        self.n_messages = {}
+        for agent in self.possible_agents:
+            count = 0
+            for _, rec_list in receivers.items():
+                if agent in rec_list:
+                    count += 1
+            self.n_messages[agent] = count
+
         # Extend the observation space with message.
         self.observation_spaces = {
-            k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf), shape=(v.shape[0] + (self.n_agents[k] - 1) * comm_bits,), dtype=np.float32)
-            if isinstance(v, Box) else Discrete(v.n + (self.n_agents[k] - 1) * comm_bits) for k, v in env.observation_spaces.items()
+            k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf),
+                   shape=(v.shape[0] + self.n_messages[k] * self.comm_bits,), dtype=np.float32)
+            if isinstance(v, Box) else Discrete(v.n + self.n_messages[k] * self.comm_bits) for k, v in
+            env.observation_spaces.items()
         }
 
-        factor = {}
-        for k, v in self.comm_agents.items():
-            if v.receivers:
-                # If agent has receivers, then it will have comm_action
-                factor[k] = 1
-            else:
-                # If agent doesn't have receivers, then it will have no comm_action
-                factor[k] = 0
-        # Extend the action space with communication actions.
-        self.action_spaces = {
-            k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf), shape=(v.shape[0]*comm_bits**factor[k],), dtype=np.float32)
-            if isinstance(v, Box) else Discrete(v.n*comm_bits**factor[k]) for k, v in env.action_spaces.items()
-        }
+        if self.comm_method == 'RIAL':
+            factor = {}
+            for k, v in self.comm_agents.items():
+                if v.receivers:
+                    # If agent has receivers, then it will have comm_action
+                    factor[k] = 1
+                else:
+                    # If agent doesn't have receivers, then it will have no comm_action
+                    factor[k] = 0
+            # Extend the action space with communication actions.
+            self.action_spaces = {
+                k: Box(low=-np.float32(np.inf), high=+np.float32(np.inf),
+                       shape=(v.shape[0] * self.comm_bits ** factor[k],), dtype=np.float32)
+                if isinstance(v, Box) else Discrete(v.n * self.comm_bits ** factor[k]) for k, v in
+                env.action_spaces.items()
+            }
+        elif self.comm_method == 'DIAL':
+            self.action_spaces = env.action_spaces
 
         self.metadata = env.metadata
 
@@ -174,22 +184,29 @@ class ParallelCommWrapper(ParallelEnv):
         observations = self.env.reset()
         self.agents = self.env.possible_agents
         # Make sure the obs has the same size with observation_space.
-        return {k: np.concatenate((v, np.zeros((self.n_agents[k] - 1) * self.comm_bits)))for k, v in observations.items()}
+        return {k: np.concatenate((v, np.zeros(self.n_messages[k] * self.comm_bits)))for k, v in observations.items()}
 
-    def step(self, actions):
+    def step(self, actions, comm_vectors=None):
         acts = {}
+        if comm_vectors:
+            for agent in self.agents:
+                self.comm_agents[agent].comm_vector = comm_vectors[agent]
         # Compute physical actions and communication actions.
-        for agent in self.agents:
-            if isinstance(actions[agent], (np.int64, np.int32, np.int16, np.int8, int)):
-                acts[agent] = actions[agent] % self.n_actions[agent]
-                self.comm_agents[agent].comm_action = actions[agent] // self.n_actions[agent]
-            else:
-                number = np.argmax(actions[agent])
-                acts[agent] = number % self.n_actions[agent]
-                self.comm_agents[agent].comm_action = number // self.n_actions[agent]
-        self.update_messages()
-        self.send_messages()
-        self.receive_message()
+        if isinstance(self.action_spaces[self.agents[0]], Discrete):
+            for agent in self.agents:
+                if isinstance(actions[agent], (np.int64, np.int32, np.int16, np.int8, int)):
+                    acts[agent] = actions[agent] % self.n_actions[agent]
+                    self.comm_agents[agent].comm_action = actions[agent] // self.n_actions[agent]
+                else:
+                    number = np.argmax(actions[agent])
+                    acts[agent] = number % self.n_actions[agent]
+                    self.comm_agents[agent].comm_action = number // self.n_actions[agent]
+        elif isinstance(self.action_spaces[self.agents[0]], Box):
+            pass
+
+        self._update_messages()
+        self._send_messages()
+        self._receive_message()
         observations, rewards, dones, infos = self.env.step(acts)
         obs = {}
         for k, v in observations.items():
@@ -210,15 +227,15 @@ class ParallelCommWrapper(ParallelEnv):
     def close(self):
         return self.env.close()
 
-    def update_messages(self):
+    def _update_messages(self):
         for agent in self.agents:
             self.comm_agents[agent].message_update()
 
-    def send_messages(self):
+    def _send_messages(self):
         for agent in self.agents:
             self.comm_agents[agent].send_messages()
 
-    def receive_message(self):
+    def _receive_message(self):
         for agent in self.agents:
             self.comm_agents[agent].receive_messages(self.comm_agents)
 
@@ -227,41 +244,27 @@ class ParallelCommWrapper(ParallelEnv):
 
 
 class CommAgent:
-    def __init__(self, comm_bits, agent, env, comm):
+    def __init__(self, comm_dict, agent, env, comm):
         self.name = agent
         self.env = env
-        self.comm_bits = comm_bits
-        self.receivers = []
+        self.comm_bits = comm_dict['comm_bits']
+        self.receivers = comm_dict['receivers']
         self.output_queue = []
         self.input_queue = []
         self.comm_method = comm
-        self.comm_action = np.zeros(comm_bits)
-        self.comm_vector = np.zeros(comm_bits)
-        self.comm_state = np.zeros(comm_bits)
-        self.reset()
-
-    def reset(self):
-        self._pick_receiver()
-        # print(self.name)
-        # print(self.receivers)
+        self.comm_action = np.zeros(self.comm_bits)
+        self.comm_vector = np.zeros(self.comm_bits)
+        self.comm_state = np.zeros(self.comm_bits)
         self.messages = [Message(self.name, receiver, self.comm_state) for receiver in self.receivers]
-
-    def _pick_receiver(self):
-        for agent in self.env.possible_agents:
-            # Make sure agent not to receive itself message
-            if agent is not self.name:
-                # Suppose, only agents with same type can exchange message
-                if agent[:5] in self.name or agent[:5] in 'listener' or 'alice' in self.name:
-                    self.receivers.append(agent)
 
     def message_update(self):
         # noise = np.random.randn(self.comm_bits)
         noise = 0
-        if self.comm_method == 'Rial':
+        if self.comm_method == 'RIAL':
             onehot = np.zeros(self.comm_bits)
             onehot[self.comm_action] = 1
             self.comm_state = softmax(onehot + noise)
-        elif self.comm_method == 'Dial':
+        elif self.comm_method == 'DIAL':
             self.comm_state = softmax(self.comm_vector + noise)
 
         for message in self.messages:
