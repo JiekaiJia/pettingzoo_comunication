@@ -54,35 +54,42 @@ class CommWrapper(BaseWrapper):
                         pass
                     else:
                         comm_channel += 1
-                    tmp = list(v.shape)
-                    tmp[-1] += comm_channel
-                    v.shape = tuple(tmp)
+                    if v.shape[2] == env.observation_spaces[k].shape[2]:
+                        v.shape = (v.shape[0], v.shape[1], v.shape[2]+comm_channel)
             elif isinstance(v, Discrete):
                 v.n = v.n + self.n_messages[k] * self.comm_bits
+
         # Compute the actions spaces before adding comm_channel
         if isinstance(env.action_spaces[self.possible_agents[0]], Discrete):
             self.n_actions = {agent: env.action_spaces[agent].n for agent in self.possible_agents}
         elif isinstance(env.action_spaces[self.possible_agents[0]], Box):
             self.n_actions = {agent: env.action_spaces[agent].shape[0] for agent in self.possible_agents}
 
+        self.factor = {}
+        for k, v in self.comm_agents.items():
+            if v.receivers:
+                # If agent has receivers, then it will have comm_action
+                self.factor[k] = 1
+            else:
+                # If agent doesn't have receivers, then it will have no comm_action
+                self.factor[k] = 0
+
+        self.action_spaces = copy.deepcopy(env.action_spaces)
+
         if self.comm_method == 'RIAL':
-            self.factor = {}
-            for k, v in self.comm_agents.items():
-                if v.receivers:
-                    # If agent has receivers, then it will have comm_action
-                    self.factor[k] = 1
-                else:
-                    # If agent doesn't have receivers, then it will have no comm_action
-                    self.factor[k] = 0
             # Extend the action space with communication actions.
-            self.action_spaces = copy.deepcopy(env.action_spaces)
             for k, v in self.action_spaces.items():
                 if isinstance(v, Box):
                     v.shape = (v.shape[0] * self.comm_bits ** self.factor[k],)
                 elif isinstance(v, Discrete):
                     v.n = v.n * self.comm_bits ** self.factor[k]
         elif self.comm_method == 'DIAL':
-            self.action_spaces = env.action_spaces
+            # Extend the action space with communication actions.
+            for k, v in self.action_spaces.items():
+                if isinstance(v, Box):
+                    v.shape = (v.shape[0] + self.comm_bits ** self.factor[k],)
+                elif isinstance(v, Discrete):
+                    v.n = v.n + self.comm_bits ** self.factor[k]
 
     def last(self, observe=True):
         msg = []
@@ -100,8 +107,8 @@ class CommWrapper(BaseWrapper):
             if rest_n == 0:
                 obs = observation
             else:
-                msg = np.pad(msg, (0, rest_n*self.obs_mapping_size[self.agent_selection]), 'constant', constant_values=(0, 0))
-                msg = msg.reshape(rest_n, self.observation_spaces[self.agent_selection].shape)
+                msg = np.pad(msg, (0, rest_n*self.obs_mapping_size[self.agent_selection]-len(msg)), 'constant', constant_values=(0, 0))
+                msg = msg.reshape(self.observation_spaces[self.agent_selection].shape[0], self.observation_spaces[self.agent_selection].shape[1], rest_n)
                 obs = np.concatenate((observation, msg), axis=-1)
         return obs, reward, done, info
 
@@ -171,24 +178,25 @@ class ParallelCommWrapper(ParallelEnv):
             self.n_messages[agent] = count
 
         # Extend the observation space with message.
+        self.obs_mapping_size = {}
         self.observation_spaces = copy.deepcopy(env.observation_spaces)
         for k, v in self.observation_spaces.items():
             if isinstance(v, Box):
                 if len(v.shape) == 1:
-                    # Add message to 1-D obs.
+                    # Add message to 1-D obs
                     v.shape = (v.shape[0] + self.n_messages[k] * self.comm_bits,)
                 else:
                     # Add message to 3-D obs, the message will be taken as 4th channel. If one channel can't hold
                     # all the messages, then add another channel. The obs is the channel last type.
-                    comm_channel = (self.n_messages[k] * self.comm_bits) // (v.shape[0]*v.shape[1])
-                    comm_rest = (self.n_messages[k] * self.comm_bits) % (v.shape[0]*v.shape[1])
+                    self.obs_mapping_size[k] = v.shape[0] * v.shape[1]
+                    comm_channel = (self.n_messages[k] * self.comm_bits) // (v.shape[0] * v.shape[1])
+                    comm_rest = (self.n_messages[k] * self.comm_bits) % (v.shape[0] * v.shape[1])
                     if comm_rest == 0:
                         pass
                     else:
                         comm_channel += 1
-                    tmp = list(v.shape)
-                    tmp[-1] += comm_channel
-                    v.shape = tuple(tmp)
+                    if v.shape[2] == env.observation_spaces[k].shape[2]:
+                        v.shape = (v.shape[0], v.shape[1], v.shape[2] + comm_channel)
             elif isinstance(v, Discrete):
                 v.n = v.n + self.n_messages[k] * self.comm_bits
         # Compute the actions spaces before adding comm_channel
@@ -197,24 +205,31 @@ class ParallelCommWrapper(ParallelEnv):
         elif isinstance(env.action_spaces[self.possible_agents[0]], Box):
             self.n_actions = {agent: env.action_spaces[agent].shape[0] for agent in self.possible_agents}
 
+        self.factor = {}
+        for k, v in self.comm_agents.items():
+            if v.receivers:
+                # If agent has receivers, then it will have comm_action
+                self.factor[k] = 1
+            else:
+                # If agent doesn't have receivers, then it will have no comm_action
+                self.factor[k] = 0
+
+        self.action_spaces = copy.deepcopy(env.action_spaces)
+
         if self.comm_method == 'RIAL':
-            self.factor = {}
-            for k, v in self.comm_agents.items():
-                if v.receivers:
-                    # If agent has receivers, then it will have comm_action
-                    self.factor[k] = 1
-                else:
-                    # If agent doesn't have receivers, then it will have no comm_action
-                    self.factor[k] = 0
             # Extend the action space with communication actions.
-            self.action_spaces = copy.deepcopy(env.action_spaces)
             for k, v in self.action_spaces.items():
                 if isinstance(v, Box):
                     v.shape = (v.shape[0] * self.comm_bits ** self.factor[k],)
                 elif isinstance(v, Discrete):
                     v.n = v.n * self.comm_bits ** self.factor[k]
         elif self.comm_method == 'DIAL':
-            self.action_spaces = env.action_spaces
+            # Extend the action space with communication actions.
+            for k, v in self.action_spaces.items():
+                if isinstance(v, Box):
+                    v.shape = (v.shape[0] + self.comm_bits ** self.factor[k],)
+                elif isinstance(v, Discrete):
+                    v.n = v.n + self.comm_bits ** self.factor[k]
 
         self.metadata = env.metadata
 
@@ -234,7 +249,10 @@ class ParallelCommWrapper(ParallelEnv):
         observations = self.env.reset()
         self.agents = self.env.possible_agents
         # Make sure the obs has the same size with observation_space.
-        return {k: np.concatenate((v, np.zeros(self.n_messages[k] * self.comm_bits)))for k, v in observations.items()}
+        if len(observations[self.agents[0]].shape) == 1:
+            return {k: np.concatenate((v, np.zeros(self.n_messages[k] * self.comm_bits)))for k, v in observations.items()}
+        else:
+            return {k: np.concatenate((v, np.zeros((v.shape[0], v.shape[1], self.observation_spaces[k].shape[2]-v.shape[2]))), axis=-1) if self.observation_spaces[k].shape != v.shape else v for k, v in observations.items()}
 
     def step(self, actions, comm_vectors=None):
         acts = {}
@@ -269,7 +287,19 @@ class ParallelCommWrapper(ParallelEnv):
             for message in self.comm_agents[k].input_queue:
                 msg.append(message.message)
             msg = np.reshape(msg, (-1))
-            obs[k] = np.concatenate((v, msg))
+            if len(v.shape) == 1:
+                obs[k] = np.concatenate((v, msg))
+                # Make sure the obs has the same size with observation_space.
+                obs[k] = np.concatenate((obs[k], np.zeros(self.observation_spaces[k].shape[0] - len(obs[k]))))
+            else:
+                rest_n = self.observation_spaces[k].shape[-1] - v.shape[-1]
+                if rest_n == 0:
+                    obs[k] = v
+                else:
+                    msg = np.pad(msg, (0, rest_n * self.obs_mapping_size[k] - len(msg)), 'constant',
+                                 constant_values=(0, 0))
+                    msg = msg.reshape(self.observation_spaces[k].shape[0], self.observation_spaces[k].shape[1], rest_n)
+                    obs[k] = np.concatenate((v, msg), axis=-1)
 
         return obs, rewards, dones, infos
 
